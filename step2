@@ -1,0 +1,18 @@
+local url = "https://raw.githubusercontent.com/USERNAME/REPO/main/song.dfpwm"
+
+local h = http.get(url, nil, true)
+
+if not h then
+    error("Download failed")
+end
+
+local data = h.readAll()
+h.close()
+
+local drive = peripheral.find("tape_drive")
+
+drive.stop()
+drive.seek(-drive.getSize())
+drive.write(data)
+
+print("Tape written!")
