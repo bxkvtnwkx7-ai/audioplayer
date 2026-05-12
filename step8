@@ -1,0 +1,184 @@
+-- Synth v8.1 - Tracker + Monitor Button Controls
+-- Computronics Sound Board
+
+local sb = peripheral.wrap("sound_0")
+if not sb then error("No sound board found") end
+
+local mon = peripheral.wrap("monitor_983")
+if not mon then error("No monitor_983 found") end
+
+mon.setTextScale(0.5)
+
+--------------------------------------------------
+-- AUDIO
+--------------------------------------------------
+
+local BPM = 120
+local STEP = 60 / BPM
+
+local NOTE = {
+    C=16.35,["C#"]=17.32,D=18.35,["D#"]=19.45,
+    E=20.60,F=21.83,["F#"]=23.12,G=24.50,
+    ["G#"]=25.96,A=27.50,["A#"]=29.14,B=30.87
+}
+
+local function freq(n,o)
+    return NOTE[n] * (2^o)
+end
+
+local instruments = {
+    piano = {fm=0.6,am=0.2,a=0.01,d=0.2,s=0.3,r=0.4},
+    pad   = {fm=1.0,am=0.3,a=0.5,d=0.5,s=0.6,r=0.8},
+    bass  = {fm=0.3,am=0.4,a=0.02,d=0.3,s=0.7,r=0.2},
+    lead  = {fm=1.4,am=0.2,a=0.01,d=0.1,s=0.4,r=0.3}
+}
+
+local instList = {"piano","pad","bass","lead"}
+
+--------------------------------------------------
+-- STATE
+--------------------------------------------------
+
+local pattern = {}
+for i=1,16 do pattern[i]=nil end
+
+local notes = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"}
+
+local noteIndex = 1
+local octave = 4
+local instIndex = 1
+
+--------------------------------------------------
+-- SOUND
+--------------------------------------------------
+
+local function playNote(note,oct,inst)
+    local i = instruments[inst]
+    sb.setFM(i.fm)
+    sb.setAM(i.am)
+    sb.setADSR(i.a,i.d,i.s,i.r)
+    sb.setFrequency(freq(note,oct))
+    sb.process()
+end
+
+local function playPattern()
+    for i=1,16 do
+        local r = pattern[i]
+        if r then playNote(r.note,r.octave,r.inst) end
+        os.sleep(STEP)
+    end
+end
+
+--------------------------------------------------
+-- UI RENDER
+--------------------------------------------------
+
+local function draw()
+    mon.clear()
+
+    mon.setCursorPos(1,1)
+    mon.write("V8 TRACKER + UI")
+
+    mon.setCursorPos(1,2)
+    mon.write("Note: "..notes[noteIndex]..
+              " Oct:"..octave..
+              " Inst:"..instList[instIndex])
+
+    -- pattern grid
+    for i=1,16 do
+        mon.setCursorPos(1,i+3)
+        local r = pattern[i]
+        if r then
+            mon.write(string.format("%02d %s%d %s",i,r.note,r.octave,r.inst))
+        else
+            mon.write(string.format("%02d --",i))
+        end
+    end
+
+    -- CONTROL BUTTONS (bottom area of 3x4 monitor)
+    mon.setCursorPos(1,20)
+    mon.write("◀ ▶ INST")
+
+    mon.setCursorPos(1,21)
+    mon.write("▲ ▼ PLAY")
+
+    mon.setCursorPos(1,22)
+    mon.write("Click buttons or grid")
+end
+
+--------------------------------------------------
+-- BUTTON HITBOX
+--------------------------------------------------
+
+local function handleButton(x,y)
+    -- Row 20 controls
+    if y == 20 then
+        if x <= 2 then
+            noteIndex = noteIndex - 1
+            if noteIndex < 1 then noteIndex = #notes end
+
+        elseif x <= 4 then
+            noteIndex = noteIndex + 1
+            if noteIndex > #notes then noteIndex = 1 end
+
+        elseif x >= 6 then
+            instIndex = instIndex + 1
+            if instIndex > #instList then instIndex = 1 end
+        end
+    end
+
+    -- Row 21 controls
+    if y == 21 then
+        if x <= 2 then
+            octave = math.max(1, octave - 1)
+
+        elseif x <= 4 then
+            octave = math.min(6, octave + 1)
+
+        elseif x >= 6 then
+            playPattern()
+        end
+    end
+end
+
+--------------------------------------------------
+-- GRID CLICK
+--------------------------------------------------
+
+local function handleGrid(x,y)
+    local row = y - 3
+    if row >= 1 and row <= 16 then
+        if pattern[row] then
+            pattern[row] = nil
+        else
+            pattern[row] = {
+                note=notes[noteIndex],
+                octave=octave,
+                inst=instList[instIndex]
+            }
+        end
+    end
+end
+
+--------------------------------------------------
+-- INPUT LOOP
+--------------------------------------------------
+
+local function uiLoop()
+    while true do
+        local e,side,x,y = os.pullEvent("monitor_touch")
+
+        handleButton(x,y)
+        handleGrid(x,y)
+
+        draw()
+    end
+end
+
+--------------------------------------------------
+-- START
+--------------------------------------------------
+
+draw()
+
+uiLoop()
