@@ -1,0 +1,106 @@
+-- Sound Board Synth Engine v1
+-- Computronics Sound Board (sound_0)
+
+local sb = peripheral.wrap("sound_0")
+
+if not sb then
+    error("No sound board found on sound_0")
+end
+
+--------------------------------------------------
+-- CONFIG
+--------------------------------------------------
+
+local BPM = 120
+local STEP = 60 / BPM -- seconds per beat
+
+--------------------------------------------------
+-- INSTRUMENTS (FM presets)
+--------------------------------------------------
+
+local instruments = {
+    pluck = {
+        fm = 0.6,
+        am = 0.2,
+        attack = 0.01,
+        decay = 0.1,
+        sustain = 0.3,
+        release = 0.2
+    },
+
+    bell = {
+        fm = 1.2,
+        am = 0.4,
+        attack = 0.01,
+        decay = 0.4,
+        sustain = 0.1,
+        release = 0.6
+    },
+
+    bass = {
+        fm = 0.3,
+        am = 0.5,
+        attack = 0.02,
+        decay = 0.2,
+        sustain = 0.6,
+        release = 0.3
+    }
+}
+
+--------------------------------------------------
+-- NOTE HELPERS
+--------------------------------------------------
+
+local function playNote(freq, len, inst)
+    inst = inst or instruments.pluck
+
+    sb.setFM(inst.fm)
+    sb.setAM(inst.am)
+    sb.setADSR(inst.attack, inst.decay, inst.sustain, inst.release)
+
+    sb.setFrequency(freq)
+    sb.process()
+
+    sb.delay(len * STEP)
+end
+
+--------------------------------------------------
+-- NOTE TABLE (simple song format)
+--------------------------------------------------
+
+-- format: {frequency, duration in beats, instrument}
+local song = {
+    {440, 1, "pluck"},
+    {523, 1, "pluck"},
+    {659, 1, "pluck"},
+    {880, 2, "bell"},
+    {659, 1, "pluck"},
+    {523, 1, "pluck"},
+    {440, 2, "bass"}
+}
+
+--------------------------------------------------
+-- PLAYER
+--------------------------------------------------
+
+local function playSong(track)
+    for _, note in ipairs(track) do
+        local freq = note[1]
+        local len = note[2]
+        local instName = note[3]
+
+        local inst = instruments[instName] or instruments.pluck
+
+        playNote(freq, len, inst)
+    end
+end
+
+--------------------------------------------------
+-- MAIN
+--------------------------------------------------
+
+print("Starting Synth Engine v1...")
+
+playSong(song)
+
+print("Done.")
