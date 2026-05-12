@@ -1,0 +1,11 @@
+local sb = peripheral.wrap("sound_0")
+
+local f = fs.open("sound_methods.txt", "w")
+
+for k,v in pairs(sb) do
+    f.writeLine(k)
+end
+
+f.close()
+
+print("Saved to sound_methods.txt")
