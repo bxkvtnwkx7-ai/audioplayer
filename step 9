@@ -1,0 +1,179 @@
+-- Synth v9 - Multi-Pattern Song Arranger + UI
+-- Computronics Sound Board
+
+local sb = peripheral.wrap("sound_0")
+if not sb then error("No sound board") end
+
+local mon = peripheral.wrap("monitor_983")
+if not mon then error("No monitor_983") end
+
+mon.setTextScale(0.5)
+
+--------------------------------------------------
+-- AUDIO
+--------------------------------------------------
+
+local BPM = 120
+local STEP = 60 / BPM
+
+local NOTE = {
+    C=16.35,["C#"]=17.32,D=18.35,["D#"]=19.45,
+    E=20.60,F=21.83,["F#"]=23.12,G=24.50,
+    ["G#"]=25.96,A=27.50,["A#"]=29.14,B=30.87
+}
+
+local function freq(n,o)
+    return NOTE[n] * (2^o)
+end
+
+local instruments = {
+    piano = {fm=0.6,am=0.2,a=0.01,d=0.2,s=0.3,r=0.4},
+    pad   = {fm=1.0,am=0.3,a=0.5,d=0.5,s=0.6,r=0.8},
+    bass  = {fm=0.3,am=0.4,a=0.02,d=0.3,s=0.7,r=0.2},
+}
+
+--------------------------------------------------
+-- PROJECT STRUCTURE
+--------------------------------------------------
+
+local project = {
+    patterns = {},
+    order = {},
+    currentPattern = "A0"
+}
+
+--------------------------------------------------
+-- INIT DEFAULT
+--------------------------------------------------
+
+local function newPattern()
+    local p = {}
+    for i=1,8 do p[i]=nil end
+    return p
+end
+
+project.patterns["A0"] = newPattern()
+project.patterns["B0"] = newPattern()
+project.order = {"A0","B0"}
+
+--------------------------------------------------
+-- AUDIO
+--------------------------------------------------
+
+local function playNote(note,oct,inst)
+    local i = instruments[inst] or instruments.piano
+
+    sb.setFM(i.fm)
+    sb.setAM(i.am)
+    sb.setADSR(i.a,i.d,i.s,i.r)
+    sb.setFrequency(freq(note,oct))
+    sb.process()
+end
+
+local function playPattern(name)
+    local p = project.patterns[name]
+    if not p then return end
+
+    for i=1,8 do
+        local r = p[i]
+        if r then playNote(r.note,r.octave,r.inst) end
+        os.sleep(STEP)
+    end
+end
+
+local function playSong()
+    for _,p in ipairs(project.order) do
+        playPattern(p)
+    end
+end
+
+--------------------------------------------------
+-- STATE
+--------------------------------------------------
+
+local notes = {"C","D","E","F","G","A","B"}
+local noteIndex = 1
+local octave = 4
+local instList = {"piano","pad","bass"}
+local instIndex = 1
+
+--------------------------------------------------
+-- UI (FIT FOR 3×4 MONITOR)
+--------------------------------------------------
+
+local function draw()
+    mon.clear()
+
+    -- ROW 1
+    mon.setCursorPos(1,1)
+    mon.write(project.currentPattern.." N:"..notes[noteIndex])
+
+    -- ROW 2
+    mon.setCursorPos(1,2)
+    mon.write("O"..octave.." "..instList[instIndex])
+
+    -- ROW 3 (controls)
+    mon.setCursorPos(1,3)
+    mon.write("< > P")
+
+    -- ROW 4 (actions)
+    mon.setCursorPos(1,4)
+    mon.write("PLAY")
+end
+
+--------------------------------------------------
+-- INPUT
+--------------------------------------------------
+
+local function handle(x,y)
+    if y == 3 then
+        if x == 1 then
+            -- prev pattern
+            if project.currentPattern == "B0" then
+                project.currentPattern = "A0"
+            else
+                project.currentPattern = "B0"
+            end
+
+        elseif x == 3 then
+            -- next pattern
+            if project.currentPattern == "A0" then
+                project.currentPattern = "B0"
+            else
+                project.currentPattern = "A0"
+            end
+
+        elseif x == 5 then
+            -- toggle note in pattern
+            local p = project.patterns[project.currentPattern]
+            local row = 1
+
+            if not p[row] then
+                p[row] = {
+                    note = notes[noteIndex],
+                    octave = octave,
+                    inst = instList[instIndex]
+                }
+            else
+                p[row] = nil
+            end
+        end
+    end
+
+    if y == 4 and x <= 4 then
+        playSong()
+    end
+end
+
+--------------------------------------------------
+-- LOOP
+--------------------------------------------------
+
+draw()
+
+while true do
+    local e,side,x,y = os.pullEvent("monitor_touch")
+
+    handle(x,y)
+    draw()
+end
