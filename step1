@@ -1,0 +1,28 @@
+local url = "http://YOUR_IP:8080/song.dfpwm"
+
+print("Downloading...")
+
+local h = http.get(url)
+
+if not h then
+    error("Failed HTTP request")
+end
+
+local data = h.readAll()
+h.close()
+
+print("Writing tape...")
+
+local drive = peripheral.find("tape_drive")
+
+if not drive then
+    error("No tape drive")
+end
+
+drive.stop()
+
+drive.seek(-drive.getSize())
+
+drive.write(data)
+
+print("Done!")
