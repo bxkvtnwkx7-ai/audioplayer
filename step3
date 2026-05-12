@@ -1,0 +1,10 @@
+local sb = peripheral.find("sound_board")
+
+if not sb then
+    print("No sound board found")
+    return
+end
+
+for k,v in pairs(sb) do
+    print(k)
+end
