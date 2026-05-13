@@ -1,0 +1,127 @@
+local sb = peripheral.wrap("sound_0")
+local mon = peripheral.wrap("monitor_983")
+
+if not sb or not mon then
+    error("Missing sound board or monitor")
+end
+
+mon.setTextScale(0.5)
+
+--------------------------------------------------
+-- STATE
+--------------------------------------------------
+
+local notes = {"C","D","E","F","G","A","B"}
+local noteIndex = 1
+local octave = 4
+
+local instList = {"P","D","B"}
+local instIndex = 1
+
+local selectedRow = 1
+
+local pattern = {}
+for i=1,16 do pattern[i] = nil end
+
+--------------------------------------------------
+-- AUDIO (simplified safe)
+--------------------------------------------------
+
+local function playNote(n,o)
+    sb.setFrequency(440 * (2^(o-4))) -- safe fallback tone mapping
+    sb.process()
+end
+
+--------------------------------------------------
+-- DRAW (CLEAR + READABLE)
+--------------------------------------------------
+
+local function draw()
+    mon.clear()
+
+    -- ROW 1: STATUS
+    mon.setCursorPos(1,1)
+    mon.write("R"..selectedRow)
+
+    mon.setCursorPos(2,1)
+    mon.write(notes[noteIndex])
+
+    mon.setCursorPos(3,1)
+    mon.write("O"..octave)
+
+    -- ROW 2: CURRENT CELL STATE
+    mon.setCursorPos(1,2)
+    local cell = pattern[selectedRow]
+    if cell then
+        mon.write(cell.note)
+    else
+        mon.write("--")
+    end
+
+    mon.setCursorPos(2,2)
+    mon.write("E")
+
+    mon.setCursorPos(3,2)
+    mon.write("P")
+
+    -- ROW 3: NAV
+    mon.setCursorPos(1,3)
+    mon.write("UP")
+
+    mon.setCursorPos(2,3)
+    mon.write("DN")
+
+    mon.setCursorPos(3,3)
+    mon.write("PL")
+
+    -- ROW 4: INSTR
+    mon.setCursorPos(1,4)
+    mon.write(instList[instIndex])
+end
+
+--------------------------------------------------
+-- INPUT
+--------------------------------------------------
+
+local function handle(x,y)
+
+    -- row selection / editing
+    if y == 2 and x == 1 then
+        if pattern[selectedRow] then
+            pattern[selectedRow] = nil
+        else
+            pattern[selectedRow] = {
+                note = notes[noteIndex],
+                octave = octave,
+                inst = instList[instIndex]
+            }
+        end
+    end
+
+    -- navigation
+    if y == 3 then
+        if x == 1 then
+            selectedRow = math.max(1, selectedRow - 1)
+        elseif x == 2 then
+            selectedRow = math.min(16, selectedRow + 1)
+        elseif x == 3 then
+            local cell = pattern[selectedRow]
+            if cell then
+                playNote(cell.note, cell.octave)
+            end
+        end
+    end
+
+    draw()
+end
+
+--------------------------------------------------
+-- LOOP
+--------------------------------------------------
+
+draw()
+
+while true do
+    local e,side,x,y = os.pullEvent("monitor_touch")
+    handle(x,y)
+end
