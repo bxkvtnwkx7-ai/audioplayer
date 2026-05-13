@@ -1,0 +1,189 @@
+-- Synth Multi-Monitor Tracker Surface v9
+-- 4x3 monitor grid (12 monitors total)
+-- Computronics Sound Board
+
+local sb = peripheral.wrap("sound_0")
+if not sb then error("No sound board found") end
+
+--------------------------------------------------
+-- MONITOR GRID DETECTION
+--------------------------------------------------
+
+local monitors = {peripheral.find("monitor")}
+if #monitors < 12 then
+    error("Need 12 monitors (4x3 grid). Found: "..#monitors)
+end
+
+-- normalize ordering (IMPORTANT: assumes wired order)
+table.sort(monitors, function(a,b)
+    return peripheral.getName(a) < peripheral.getName(b)
+end)
+
+--------------------------------------------------
+-- AUDIO
+--------------------------------------------------
+
+local BPM = 120
+local STEP = 60 / BPM
+
+local NOTE = {
+    C=16.35,["C#"]=17.32,D=18.35,["D#"]=19.45,
+    E=20.60,F=21.83,["F#"]=23.12,G=24.50,
+    ["G#"]=25.96,A=27.50,["A#"]=29.14,B=30.87
+}
+
+local function freq(n,o)
+    return NOTE[n] * (2^o)
+end
+
+local instruments = {
+    piano={fm=0.6,am=0.2,a=0.01,d=0.2,s=0.3,r=0.4},
+    pad={fm=1.0,am=0.3,a=0.5,d=0.5,s=0.6,r=0.8},
+    bass={fm=0.3,am=0.4,a=0.02,d=0.3,s=0.7,r=0.2},
+    lead={fm=1.4,am=0.2,a=0.01,d=0.1,s=0.4,r=0.3}
+}
+
+--------------------------------------------------
+-- TRACK DATA
+--------------------------------------------------
+
+local pattern = {}
+for i=1,32 do pattern[i]=nil end
+
+local notes = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"}
+
+local noteIndex = 1
+local octave = 4
+local instList = {"piano","pad","bass","lead"}
+local instIndex = 1
+
+local playState = false
+
+--------------------------------------------------
+-- AUDIO ENGINE
+--------------------------------------------------
+
+local function playNote(n,o,i)
+    local inst = instruments[i] or instruments.piano
+    sb.setFM(inst.fm)
+    sb.setAM(inst.am)
+    sb.setADSR(inst.a,inst.d,inst.s,inst.r)
+    sb.setFrequency(freq(n,o))
+    sb.process()
+end
+
+local function playPattern()
+    for i=1,#pattern do
+        if not playState then return end
+        local r = pattern[i]
+        if r then playNote(r.note,r.octave,r.inst) end
+        os.sleep(STEP)
+    end
+end
+
+--------------------------------------------------
+-- MONITOR DRAW HELPERS
+--------------------------------------------------
+
+local function drawMonitor(m, text)
+    m.clear()
+    m.setCursorPos(1,1)
+    m.write(text)
+end
+
+--------------------------------------------------
+-- UI RENDER
+--------------------------------------------------
+
+local function render()
+    -- GRID AREA (top 8 monitors = pattern)
+    for i=1,8 do
+        local m = monitors[i]
+        local row = pattern[i] or pattern[i+8] or {}
+
+        local txt = ""
+
+        if pattern[i] then
+            txt = i..":"..pattern[i].note
+        else
+            txt = tostring(i)
+        end
+
+        drawMonitor(m, txt)
+    end
+
+    -- CONTROL ROW (bottom 4 monitors)
+
+    drawMonitor(monitors[9],  "< NOTE")
+    drawMonitor(monitors[10], "> NOTE")
+    drawMonitor(monitors[11], "OCT")
+    drawMonitor(monitors[12], playState and "STOP" or "PLAY")
+end
+
+--------------------------------------------------
+-- INPUT HANDLING
+--------------------------------------------------
+
+local function handleClick(i)
+    -- GRID (monitors 1-8)
+    if i <= 8 then
+        local idx = i
+        if pattern[idx] then
+            pattern[idx] = nil
+        else
+            pattern[idx] = {
+                note = notes[noteIndex],
+                octave = octave,
+                inst = instList[instIndex]
+            }
+        end
+    end
+
+    -- CONTROLS
+    if i == 9 then
+        noteIndex = (noteIndex - 2) % #notes + 1
+    elseif i == 10 then
+        noteIndex = noteIndex % #notes + 1
+
+    elseif i == 11 then
+        octave = (octave % 6) + 1
+
+    elseif i == 12 then
+        playState = not playState
+        if playState then
+            parallel.waitForAny(playPattern)
+        end
+    end
+end
+
+--------------------------------------------------
+-- INPUT LOOP
+--------------------------------------------------
+
+local function inputLoop()
+    while true do
+        local e,side,x,y = os.pullEvent("monitor_touch")
+
+        local m = peripheral.wrap(side)
+        local index = nil
+
+        for i=1,#monitors do
+            if monitors[i] == m then
+                index = i
+                break
+            end
+        end
+
+        if index then
+            handleClick(index)
+            render()
+        end
+    end
+end
+
+--------------------------------------------------
+-- START
+--------------------------------------------------
+
+render()
+inputLoop()
