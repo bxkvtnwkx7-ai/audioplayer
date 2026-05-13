@@ -1,0 +1,150 @@
+-- Synth v10 - Proper Page-Based Tracker UI (3x4 Monitor)
+-- Computronics Sound Board
+
+local sb = peripheral.wrap("sound_0")
+if not sb then error("No sound board") end
+
+local mon = peripheral.wrap("monitor_983")
+if not mon then error("No monitor_983") end
+
+mon.setTextScale(0.5)
+
+--------------------------------------------------
+-- AUDIO
+--------------------------------------------------
+
+local BPM = 120
+local STEP = 60 / BPM
+
+local NOTE = {
+    C=16.35,["C#"]=17.32,D=18.35,["D#"]=19.45,
+    E=20.60,F=21.83,["F#"]=23.12,G=24.50,
+    ["G#"]=25.96,A=27.50,["A#"]=29.14,B=30.87
+}
+
+local function freq(n,o)
+    return NOTE[n] * (2^o)
+end
+
+local instruments = {
+    piano={fm=0.6,am=0.2,a=0.01,d=0.2,s=0.3,r=0.4},
+    pad={fm=1.0,am=0.3,a=0.5,d=0.5,s=0.6,r=0.8},
+    bass={fm=0.3,am=0.4,a=0.02,d=0.3,s=0.7,r=0.2},
+}
+
+--------------------------------------------------
+-- TRACK DATA
+--------------------------------------------------
+
+local pattern = {}
+for i=1,16 do pattern[i]=nil end
+
+local page = 0
+local PAGE_SIZE = 4
+
+local notes = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"}
+local noteIndex = 1
+local octave = 4
+local instList = {"piano","pad","bass"}
+local instIndex = 1
+
+--------------------------------------------------
+-- AUDIO
+--------------------------------------------------
+
+local function playNote(n,o,i)
+    local inst = instruments[i] or instruments.piano
+    sb.setFM(inst.fm)
+    sb.setAM(inst.am)
+    sb.setADSR(inst.a,inst.d,inst.s,inst.r)
+    sb.setFrequency(freq(n,o))
+    sb.process()
+end
+
+local function playPattern()
+    for i=1,16 do
+        local r = pattern[i]
+        if r then playNote(r.note,r.octave,r.inst) end
+        os.sleep(STEP)
+    end
+end
+
+--------------------------------------------------
+-- UI
+--------------------------------------------------
+
+local function draw()
+    mon.clear()
+
+    local startRow = page * PAGE_SIZE + 1
+
+    -- ROW 1
+    mon.setCursorPos(1,1)
+    mon.write("P"..page.." N"..notes[noteIndex])
+
+    -- ROW 2 (grid view)
+    for i=0,3 do
+        local r = startRow + i
+        mon.setCursorPos(1,2)
+
+        local row = pattern[r]
+        if row then
+            mon.write(r..":"..row.note)
+        else
+            mon.write(r.."--")
+        end
+    end
+
+    -- ROW 3 controls
+    mon.setCursorPos(1,3)
+    mon.write("< > E P")
+
+    -- ROW 4 status
+    mon.setCursorPos(1,4)
+    mon.write(instList[instIndex].." O"..octave)
+end
+
+--------------------------------------------------
+-- INPUT
+--------------------------------------------------
+
+local function handle(x,y)
+    -- page left/right
+    if y == 3 then
+        if x == 1 then
+            page = math.max(0, page - 1)
+        elseif x == 3 then
+            page = math.min(3, page + 1)
+
+        elseif x == 5 then
+            -- edit current page rows
+            local base = page * PAGE_SIZE + 1
+            local row = base
+
+            if pattern[row] then
+                pattern[row] = nil
+            else
+                pattern[row] = {
+                    note=notes[noteIndex],
+                    octave=octave,
+                    inst=instList[instIndex]
+                }
+            end
+
+        elseif x == 7 then
+            playPattern()
+        end
+    end
+end
+
+--------------------------------------------------
+-- LOOP
+--------------------------------------------------
+
+draw()
+
+while true do
+    local e,side,x,y = os.pullEvent("monitor_touch")
+    handle(x,y)
+    draw()
+end
