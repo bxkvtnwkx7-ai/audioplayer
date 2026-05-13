@@ -1,0 +1,165 @@
+-- Synth Tracker (Option A - Single Multi-Block Monitor Safe)
+
+local sb = peripheral.wrap("sound_0")
+if not sb then error("No sound board found") end
+
+local mon = peripheral.wrap("monitor_983")
+if not mon then error("monitor_983 not found") end
+
+mon.setTextScale(0.5)
+
+--------------------------------------------------
+-- AUDIO ENGINE
+--------------------------------------------------
+
+local BPM = 120
+local STEP = 60 / BPM
+
+local NOTE = {
+    C=16.35, ["C#"]=17.32, D=18.35, ["D#"]=19.45,
+    E=20.60, F=21.83, ["F#"]=23.12, G=24.50,
+    ["G#"]=25.96, A=27.50, ["A#"]=29.14, B=30.87
+}
+
+local function freq(n,o)
+    return NOTE[n] * (2^o)
+end
+
+local instruments = {
+    piano = {fm=0.6,am=0.2,a=0.01,d=0.2,s=0.3,r=0.4},
+    pad   = {fm=1.0,am=0.3,a=0.5,d=0.5,s=0.6,r=0.8},
+    bass  = {fm=0.3,am=0.4,a=0.02,d=0.3,s=0.7,r=0.2},
+    lead  = {fm=1.4,am=0.2,a=0.01,d=0.1,s=0.4,r=0.3}
+}
+
+local instList = {"piano","pad","bass","lead"}
+
+--------------------------------------------------
+-- TRACK DATA
+--------------------------------------------------
+
+local pattern = {}
+for i=1,32 do pattern[i]=nil end
+
+local notes = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"}
+
+local noteIndex = 1
+local octave = 4
+local instIndex = 1
+
+--------------------------------------------------
+-- AUDIO
+--------------------------------------------------
+
+local function playNote(note, oct, inst)
+    local i = instruments[inst]
+    sb.setFM(i.fm)
+    sb.setAM(i.am)
+    sb.setADSR(i.a,i.d,i.s,i.r)
+    sb.setFrequency(freq(note,oct))
+    sb.process()
+end
+
+local function playPattern()
+    for i=1,32 do
+        local row = pattern[i]
+        if row then
+            playNote(row.note,row.octave,row.inst)
+        end
+        os.sleep(STEP)
+    end
+end
+
+--------------------------------------------------
+-- UI (OPTION A SAFE RENDER)
+--------------------------------------------------
+
+local function draw()
+    mon.clear()
+
+    local w,h = mon.getSize()
+
+    -- HEADER
+    mon.setCursorPos(1,1)
+    mon.write("TRACKER")
+
+    mon.setCursorPos(1,2)
+    mon.write(notes[noteIndex].." O"..octave.." I"..instList[instIndex])
+
+    -- GRID AREA
+    local startRow = 3
+    local maxRows = h - 4 -- reserve bottom for controls
+
+    for i=1,maxRows do
+        local y = startRow + i - 1
+        if y >= h - 1 then break end
+
+        mon.setCursorPos(1,y)
+
+        local row = pattern[i]
+        if row then
+            mon.write(string.format("%02d %s%d", i, row.note, row.octave))
+        else
+            mon.write(string.format("%02d --", i))
+        end
+    end
+
+    -- CONTROLS (always visible bottom line)
+    mon.setCursorPos(1,h)
+    mon.write("< > O I P")
+end
+
+--------------------------------------------------
+-- INPUT
+--------------------------------------------------
+
+local function handle(x,y)
+    local w,h = mon.getSize()
+
+    -- GRID TOGGLE
+    if y >= 3 and y < h then
+        local row = y - 2
+        if row >= 1 and row <= #pattern then
+            if pattern[row] then
+                pattern[row] = nil
+            else
+                pattern[row] = {
+                    note = notes[noteIndex],
+                    octave = octave,
+                    inst = instList[instIndex]
+                }
+            end
+        end
+    end
+
+    -- CONTROLS (bottom row)
+    if y == h then
+        if x == 1 then
+            noteIndex = (noteIndex - 2) % #notes + 1
+
+        elseif x == 2 then
+            noteIndex = noteIndex % #notes + 1
+
+        elseif x == 3 then
+            octave = math.min(6, octave + 1)
+
+        elseif x == 4 then
+            instIndex = instIndex % #instList + 1
+
+        elseif x == 5 then
+            playPattern()
+        end
+    end
+end
+
+--------------------------------------------------
+-- LOOP
+--------------------------------------------------
+
+draw()
+
+while true do
+    local e,side,x,y = os.pullEvent("monitor_touch")
+    handle(x,y)
+    draw()
+end
