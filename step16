@@ -1,0 +1,217 @@
+-- Stable Music Workstation v1
+-- CC:Tweaked + Computronics Sound Board safe DAW system
+
+--------------------------------------------------
+-- PERIPHERALS
+--------------------------------------------------
+
+local sb = peripheral.wrap("sound_0")
+if not sb then error("No sound board found") end
+
+local mon = peripheral.wrap("monitor_983")
+if not mon then error("monitor_983 not found") end
+
+mon.setTextScale(0.5)
+
+--------------------------------------------------
+-- AUDIO TABLE
+--------------------------------------------------
+
+local NOTE = {
+    C=16.35,["C#"]=17.32,D=18.35,["D#"]=19.45,
+    E=20.60,F=21.83,["F#"]=23.12,G=24.50,
+    ["G#"]=25.96,A=27.50,["A#"]=29.14,B=30.87
+}
+
+local instruments = {
+    piano={fm=0.6,am=0.2,a=0.01,d=0.2,s=0.3,r=0.4},
+    pad={fm=1.0,am=0.3,a=0.5,d=0.5,s=0.6,r=0.8},
+    bass={fm=0.3,am=0.4,a=0.02,d=0.3,s=0.7,r=0.2},
+    lead={fm=1.4,am=0.2,a=0.01,d=0.1,s=0.4,r=0.3}
+}
+
+local instList = {"piano","pad","bass","lead"}
+local notes = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"}
+
+--------------------------------------------------
+-- STATE
+--------------------------------------------------
+
+local pattern = {}
+for i=1,32 do
+    pattern[i] = nil
+end
+
+local noteIndex = 1
+local octave = 4
+local instIndex = 1
+
+local isPlaying = false
+local playhead = 1
+
+local BPM = 120
+local STEP = 60 / BPM
+
+--------------------------------------------------
+-- SAFE AUDIO ENGINE
+--------------------------------------------------
+
+local function safeFreq(note, oct)
+    if not note or not oct then return nil end
+    local base = NOTE[note]
+    if not base then return nil end
+
+    local freq = base * (2 ^ oct)
+    if type(freq) ~= "number" then return nil end
+
+    return freq
+end
+
+local function playNote(note, oct, inst)
+    local f = safeFreq(note, oct)
+    if not f then return end
+
+    local i = instruments[inst] or instruments.piano
+
+    sb.setFM(i.fm)
+    sb.setAM(i.am)
+    sb.setADSR(i.a,i.d,i.s,i.r)
+
+    sb.setFrequency(f)
+    sb.process()
+end
+
+--------------------------------------------------
+-- PLAYBACK ENGINE
+--------------------------------------------------
+
+local function stopPlayback()
+    isPlaying = false
+    playhead = 1
+end
+
+local function playLoop()
+    isPlaying = true
+
+    while isPlaying do
+        local step = pattern[playhead]
+
+        if step then
+            playNote(step.note, step.octave, step.inst)
+        end
+
+        playhead = playhead + 1
+        if playhead > #pattern then
+            playhead = 1
+        end
+
+        draw()
+        os.sleep(STEP)
+    end
+end
+
+--------------------------------------------------
+-- UI RENDER
+--------------------------------------------------
+
+local function draw()
+    mon.clear()
+
+    local w,h = mon.getSize()
+
+    -- HEADER
+    mon.setCursorPos(1,1)
+    mon.write("DAW WORKSTATION")
+
+    mon.setCursorPos(1,2)
+    mon.write(notes[noteIndex].." O"..octave.." I"..instList[instIndex])
+
+    -- GRID
+    for i=1,math.min(h-3, #pattern) do
+        mon.setCursorPos(1,i+2)
+
+        local row = pattern[i]
+
+        local cursor = (i == playhead and isPlaying)
+
+        if row then
+            local text = i.." "..row.note..row.octave
+
+            if cursor then text = ">"..text end
+            mon.write(text)
+        else
+            local text = i.." --"
+            if cursor then text = ">"..text end
+            mon.write(text)
+        end
+    end
+
+    -- CONTROL STRIP
+    mon.setCursorPos(1,h)
+    mon.write("[<][>][O][I][P]")
+end
+
+--------------------------------------------------
+-- INPUT HANDLER
+--------------------------------------------------
+
+local function handle(x,y)
+    local w,h = mon.getSize()
+
+    -- GRID EDIT
+    if y >= 3 and y < h then
+        local row = y - 2
+
+        if pattern[row] then
+            pattern[row] = nil
+        else
+            pattern[row] = {
+                note = notes[noteIndex],
+                octave = octave,
+                inst = instList[instIndex]
+            }
+        end
+
+        draw()
+        return
+    end
+
+    -- CONTROL STRIP (safe fixed zones)
+    if y == h then
+        local section = math.floor(w / 5)
+        if section < 1 then section = 1 end
+
+        if x <= section then
+            noteIndex = (noteIndex - 2) % #notes + 1
+
+        elseif x <= section * 2 then
+            noteIndex = noteIndex % #notes + 1
+
+        elseif x <= section * 3 then
+            octave = math.min(6, octave + 1)
+
+        elseif x <= section * 4 then
+            instIndex = instIndex % #instList + 1
+
+        else
+            if isPlaying then
+                stopPlayback()
+            else
+                parallel.start(playLoop)
+            end
+        end
+
+        draw()
+    end
+end
+
+--------------------------------------------------
+-- START
+--------------------------------------------------
+
+draw()
+
+while true do
+    local e,side,x,y = os.pullEvent("monitor_touch")
+    handle(x,y)
+end
