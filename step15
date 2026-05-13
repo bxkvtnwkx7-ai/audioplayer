@@ -1,0 +1,222 @@
+local sb = peripheral.wrap("sound_0")
+if not sb then error("No sound board found") end
+
+local mon = peripheral.wrap("monitor_983")
+if not mon then error("monitor_983 not found") end
+
+mon.setTextScale(0.5)
+
+--------------------------------------------------
+-- AUDIO (unchanged)
+--------------------------------------------------
+
+local BPM = 120
+local STEP = 60 / BPM
+
+local NOTE = {
+    C=16.35,["C#"]=17.32,D=18.35,["D#"]=19.45,
+    E=20.60,F=21.83,["F#"]=23.12,G=24.50,
+    ["G#"]=25.96,A=27.50,["A#"]=29.14,B=30.87
+}
+
+local function freq(n,o)
+    return NOTE[n] * (2^o)
+end
+
+local instruments = {
+    piano={fm=0.6,am=0.2,a=0.01,d=0.2,s=0.3,r=0.4},
+    pad={fm=1.0,am=0.3,a=0.5,d=0.5,s=0.6,r=0.8},
+    bass={fm=0.3,am=0.4,a=0.02,d=0.3,s=0.7,r=0.2},
+    lead={fm=1.4,am=0.2,a=0.01,d=0.1,s=0.4,r=0.3}
+}
+
+local instList = {"piano","pad","bass","lead"}
+
+--------------------------------------------------
+-- STATE
+--------------------------------------------------
+
+local pattern = {}
+for i=1,16 do pattern[i]=nil end
+
+local notes = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"}
+
+local noteIndex = 1
+local octave = 4
+local instIndex = 1
+
+--------------------------------------------------
+-- BUTTON SYSTEM
+--------------------------------------------------
+
+local buttons = {}
+
+local function buildButtons()
+    local w,h = mon.getSize()
+
+    local y = h
+
+    local labels = {
+        "< NOTE",
+        "NOTE >",
+        "OCT +",
+        "INST",
+        "PLAY"
+    }
+
+    local bw = math.floor(w / #labels)
+
+    buttons = {}
+
+    for i=1,#labels do
+        local x1 = (i-1)*bw + 1
+        local x2 = (i==#labels) and w or (i*bw)
+
+        buttons[i] = {
+            x1=x1,
+            x2=x2,
+            label=labels[i],
+            active=false
+        }
+    end
+end
+
+--------------------------------------------------
+-- AUDIO
+--------------------------------------------------
+
+local function playNote(note,oct,inst)
+    local i = instruments[inst]
+    sb.setFM(i.fm)
+    sb.setAM(i.am)
+    sb.setADSR(i.a,i.d,i.s,i.r)
+    sb.setFrequency(freq(note,oct))
+    sb.process()
+end
+
+local function playPattern()
+    for i=1,16 do
+        local r = pattern[i]
+        if r then playNote(r.note,r.octave,r.inst) end
+        os.sleep(STEP)
+    end
+end
+
+--------------------------------------------------
+-- DRAW (WITH HIGHLIGHT FEEDBACK)
+--------------------------------------------------
+
+local function draw()
+    mon.clear()
+
+    local w,h = mon.getSize()
+
+    -- HEADER
+    mon.setCursorPos(1,1)
+    mon.write("TRACKER")
+
+    mon.setCursorPos(1,2)
+    mon.write(notes[noteIndex].." O"..octave.." "..instList[instIndex])
+
+    -- GRID
+    for i=1,math.min(12,h-3) do
+        mon.setCursorPos(1,i+2)
+        local r = pattern[i]
+        if r then
+            mon.write(i.." "..r.note..r.octave)
+        else
+            mon.write(i.." --")
+        end
+    end
+
+    -- BUTTON BAR (DAW STRIP)
+    for i,b in ipairs(buttons) do
+        local label = b.label
+
+        if b.active then
+            label = "["..label.."]"
+        else
+            label = " "..label.." "
+        end
+
+        local x = b.x1
+        local y = h
+
+        mon.setCursorPos(x,y)
+        mon.write(label:sub(1, b.x2 - b.x1 + 1))
+    end
+end
+
+--------------------------------------------------
+-- BUTTON ACTIONS
+--------------------------------------------------
+
+local function trigger(i)
+    if i == 1 then
+        noteIndex = (noteIndex - 2) % #notes + 1
+
+    elseif i == 2 then
+        noteIndex = noteIndex % #notes + 1
+
+    elseif i == 3 then
+        octave = math.min(6, octave + 1)
+
+    elseif i == 4 then
+        instIndex = instIndex % #instList + 1
+
+    elseif i == 5 then
+        playPattern()
+    end
+
+    buttons[i].active = true
+    draw()
+
+    os.sleep(0.1)
+
+    buttons[i].active = false
+end
+
+--------------------------------------------------
+-- INPUT
+--------------------------------------------------
+
+local function handle(x,y)
+    local w,h = mon.getSize()
+
+    if y == h then
+        for i,b in ipairs(buttons) do
+            if x >= b.x1 and x <= b.x2 then
+                trigger(i)
+                return
+            end
+        end
+    end
+
+    -- grid toggle
+    if y >= 3 and y < h then
+        local row = y - 2
+        if pattern[row] then
+            pattern[row] = nil
+        else
+            pattern[row] = {
+                note = notes[noteIndex],
+                octave = octave,
+                inst = instList[instIndex]
+            }
+        end
+    end
+
+    draw()
+end
+
+--------------------------------------------------
+-- INIT
+--------------------------------------------------
+
+buildButtons()
+draw()
+
+while true do
+    local e,side,x,y = os.pullEvent("monitor_touch")
+    handle(x,y)
+end
