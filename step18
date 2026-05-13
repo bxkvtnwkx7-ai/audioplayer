@@ -1,0 +1,236 @@
+-- =====================================================
+-- ABLETON-STYLE DAW (COMPUTRONICS SOUND BOARD)
+-- monitor_983 + sound_0
+-- =====================================================
+
+local monitor = peripheral.wrap("monitor_983")
+local sound = peripheral.wrap("sound_0")
+
+monitor.setTextScale(0.5)
+
+-- =========================
+-- CONFIG
+-- =========================
+
+local TRACKS = {"Piano", "Pads", "Bass", "Drums"}
+local STEPS = 16
+local BPM = 120
+
+local playing = false
+local mode = "session" -- session | arrangement
+
+local playhead = 1
+local tick = 0
+
+-- =========================
+-- SESSION VIEW (CLIPS)
+-- clips[track][clip][step] = noteId
+-- =========================
+
+local CLIPS = {}
+local CLIP_COUNT = 4
+
+for t = 1, #TRACKS do
+    CLIPS[t] = {}
+    for c = 1, CLIP_COUNT do
+        CLIPS[t][c] = {}
+        for s = 1, STEPS do
+            CLIPS[t][c][s] = nil
+        end
+    end
+end
+
+-- arrangement[step] = clipIndex
+local ARRANGEMENT = {}
+for i = 1, 64 do
+    ARRANGEMENT[i] = ((i - 1) % CLIP_COUNT) + 1
+end
+
+-- =========================
+-- NOTES
+-- =========================
+
+local NOTES = {
+    130.81, 146.83, 164.81, 174.61,
+    196.00, 220.00, 246.94, 261.63,
+    293.66, 329.63, 349.23, 392.00,
+    440.00, 493.88, 523.25
+}
+
+local function getNote(id)
+    if type(id) ~= "number" then return nil end
+    return NOTES[((id - 1) % #NOTES) + 1]
+end
+
+-- =========================
+-- SOUND ENGINE (SYNTH)
+-- =========================
+
+local function setTrackSound(track)
+    sound.resetEnvelope()
+    sound.resetFM()
+    sound.resetAM()
+
+    if track == "Piano" then
+        sound.setADSR(0.01, 0.1, 0.7, 0.2)
+
+    elseif track == "Pads" then
+        sound.setADSR(0.6, 0.4, 0.6, 0.9)
+        sound.setFM(2.0, 0.6, 1.2)
+        sound.setAM(0.3)
+
+    elseif track == "Bass" then
+        sound.setADSR(0.01, 0.05, 1.0, 0.1)
+        sound.setFM(0.8, 0.2, 0.4)
+
+    elseif track == "Drums" then
+        sound.setLFSR(1)
+        sound.setADSR(0.001, 0.05, 0.0, 0.05)
+    end
+end
+
+local function trigger(track, freq)
+    if type(freq) ~= "number" then return end
+
+    setTrackSound(track)
+    sound.setFrequency(freq)
+    sound.setVolume(1.0)
+    sound.process()
+end
+
+-- =========================
+-- ENGINE (SESSION + ARRANGEMENT)
+-- =========================
+
+local function getCurrentClip(trackIndex, stepIndex)
+    if mode == "session" then
+        return CLIPS[trackIndex][1]
+    else
+        local clip = ARRANGEMENT[math.floor(stepIndex / STEPS) + 1] or 1
+        return CLIPS[trackIndex][clip]
+    end
+end
+
+local function playStep()
+    local stepIndex = ((playhead - 1) % STEPS) + 1
+
+    for t, track in ipairs(TRACKS) do
+        local clip = getCurrentClip(t, playhead)
+
+        if clip then
+            local noteId = clip[stepIndex]
+            trigger(track, getNote(noteId))
+        end
+    end
+
+    playhead = playhead + 1
+    if playhead > 64 then playhead = 1 end
+end
+
+local function tickTime()
+    return 60 / BPM
+end
+
+local function sequencer()
+    while playing do
+        playStep()
+        draw()
+        sleep(tickTime())
+    end
+end
+
+-- =========================
+-- UI (ABLETON STYLE)
+-- =========================
+
+local function clear()
+    monitor.setBackgroundColor(colors.black)
+    monitor.clear()
+end
+
+local function drawSession()
+    monitor.setTextColor(colors.white)
+    monitor.setCursorPos(2,1)
+    monitor.write("SESSION VIEW | Ableton DAW")
+
+    for t, track in ipairs(TRACKS) do
+        monitor.setCursorPos(1, 3 + (t-1)*3)
+        monitor.write(track)
+
+        for c = 1, CLIP_COUNT do
+            monitor.setCursorPos(10 + (c-1)*4, 3 + (t-1)*3)
+
+            monitor.setBackgroundColor(colors.gray)
+            monitor.write("[" .. c .. "]")
+        end
+    end
+end
+
+local function drawArrangement()
+    monitor.setTextColor(colors.white)
+    monitor.setCursorPos(2,1)
+    monitor.write("ARRANGEMENT VIEW")
+
+    for i = 1, 16 do
+        monitor.setCursorPos(2 + i*2, 5)
+
+        if i == math.floor(playhead / STEPS) then
+            monitor.setBackgroundColor(colors.lime)
+        else
+            monitor.setBackgroundColor(colors.gray)
+        end
+
+        monitor.write(tostring(ARRANGEMENT[i]))
+    end
+end
+
+function draw()
+    clear()
+
+    if mode == "session" then
+        drawSession()
+    else
+        drawArrangement()
+    end
+
+    monitor.setBackgroundColor(colors.black)
+    monitor.setCursorPos(2, 20)
+    monitor.write("MODE: " .. mode .. " | PLAY " .. tostring(playing))
+end
+
+-- =========================
+-- INPUT
+-- =========================
+
+local function input()
+    while true do
+        local _, _, x, y = os.pullEvent("monitor_touch")
+
+        if y == 20 then
+            if x < 6 then
+                playing = true
+                parallel.waitForAny(sequencer)
+
+            elseif x < 12 then
+                playing = false
+
+            elseif x < 20 then
+                mode = (mode == "session") and "arrangement" or "session"
+            end
+        else
+            -- (clip launching placeholder - can expand into full clip editor)
+            if mode == "session" then
+                -- could assign clip selection here
+            end
+        end
+
+        draw()
+    end
+end
+
+-- =========================
+-- BOOT
+-- =========================
+
+draw()
+parallel.waitForAny(input)
