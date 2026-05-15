@@ -1,0 +1,8 @@
+local tape = peripheral.find("tape_drive")
+
+tape.stop()
+tape.seek(-tape.getPosition())
+
+local ok = tape.write("hello")
+
+print(ok)
