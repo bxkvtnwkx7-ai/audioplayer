@@ -1,0 +1,57 @@
+local dfpwm = require("cc.audio.dfpwm")
+local decoder = dfpwm.make_decoder()
+
+local speaker = peripheral.find("speaker")
+
+local baseURL = "http://YOUR_SERVER_IP:3000/song/"
+local index = 0
+
+local buffer = {}
+local BUFFER_SIZE = 8
+
+-- DOWNLOAD CHUNK
+local function fetch(i)
+    local url = baseURL .. string.format("%04d.bin", i)
+    local h = http.get(url)
+    if not h then return nil end
+
+    local data = h.readAll()
+    h.close()
+    return data
+end
+
+-- PREFETCH THREAD
+local function downloader()
+    while true do
+        if #buffer < BUFFER_SIZE then
+            local chunk = fetch(index + #buffer)
+            if chunk then
+                table.insert(buffer, chunk)
+            else
+                break
+            end
+        else
+            os.sleep(0.05)
+        end
+    end
+end
+
+-- PLAYBACK THREAD
+local function player()
+    while true do
+        if #buffer == 0 then
+            os.sleep(0.05)
+        else
+            local chunk = table.remove(buffer, 1)
+            local audio = decoder(chunk)
+
+            while not speaker.playAudio(audio) do
+                os.pullEvent("speaker_audio_empty")
+            end
+
+            index = index + 1
+        end
+    end
+end
+
+parallel.waitForAny(downloader, player)
