@@ -1,5 +1,11 @@
 local name = peripheral.getName(peripheral.find("tape_drive"))
 
+local f = fs.open("methods.txt", "w")
+
 for _, method in ipairs(peripheral.getMethods(name)) do
-    print(method)
+    f.writeLine(method)
 end
+
+f.close()
+
+print("saved")
