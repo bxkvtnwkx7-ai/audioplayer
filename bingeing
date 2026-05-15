@@ -1,5 +1,5 @@
-local tape = peripheral.find("tape_drive")
+local name = peripheral.getName(peripheral.find("tape_drive"))
 
-for k,v in pairs(peripheral.getMethods(tape)) do
-    print(k)
+for _, method in ipairs(peripheral.getMethods(name)) do
+    print(method)
 end
