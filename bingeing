@@ -1,0 +1,5 @@
+local tape = peripheral.find("tape_drive")
+
+for k,v in pairs(peripheral.getMethods(tape)) do
+    print(k)
+end
