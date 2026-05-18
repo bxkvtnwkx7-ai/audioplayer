@@ -1,0 +1,17 @@
+local url = "http://3.219.204.139:8080/song_tape1.dfpwm"
+
+print("Downloading...")
+
+local response = http.get(url)
+
+if not response then
+    error("Failed to connect")
+end
+
+local file = fs.open("song.dfpwm", "wb")
+file.write(response.readAll())
+file.close()
+
+response.close()
+
+print("Download complete")
