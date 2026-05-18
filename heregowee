@@ -1,0 +1,22 @@
+local tape = peripheral.find("tape_drive")
+
+if not tape then
+    error("No tape drive found")
+end
+
+local file = fs.open("song.dfpwm", "rb")
+
+if not file then
+    error("song.dfpwm missing")
+end
+
+local data = file.readAll()
+file.close()
+
+tape.stop()
+tape.seek(-tape.getSize())
+
+print("Writing tape...")
+tape.write(data)
+
+print("Done!")
